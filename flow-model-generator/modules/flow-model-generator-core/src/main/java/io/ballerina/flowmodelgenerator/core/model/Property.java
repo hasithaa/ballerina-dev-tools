@@ -63,7 +63,9 @@ public record Property(Metadata metadata, String valueType, String value, boolea
 
     public enum ValueType {
         EXPRESSION,
-        IDENTIFIER
+        IDENTIFIER,
+        TYPE,
+        ENUM
     }
 
     /**

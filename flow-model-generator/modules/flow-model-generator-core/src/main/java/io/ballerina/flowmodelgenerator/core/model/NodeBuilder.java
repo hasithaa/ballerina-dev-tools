@@ -43,6 +43,7 @@ import io.ballerina.flowmodelgenerator.core.model.node.Fail;
 import io.ballerina.flowmodelgenerator.core.model.node.HttpApiEvent;
 import io.ballerina.flowmodelgenerator.core.model.node.If;
 import io.ballerina.flowmodelgenerator.core.model.node.Lock;
+import io.ballerina.flowmodelgenerator.core.model.node.NewConnection;
 import io.ballerina.flowmodelgenerator.core.model.node.NewData;
 import io.ballerina.flowmodelgenerator.core.model.node.Panic;
 import io.ballerina.flowmodelgenerator.core.model.node.Return;
@@ -97,6 +98,7 @@ public abstract class NodeBuilder {
         put(FlowNode.Kind.PANIC, Panic::new);
         put(FlowNode.Kind.EVENT_HTTP_API, HttpApiEvent::new);
         put(FlowNode.Kind.ACTION_CALL, ActionCall::new);
+        put(FlowNode.Kind.NEW_CONNECTION, NewConnection::new);
         put(FlowNode.Kind.START, Start::new);
         put(FlowNode.Kind.TRANSACTION, Transaction::new);
         put(FlowNode.Kind.LOCK, Lock::new);
@@ -214,6 +216,10 @@ public abstract class NodeBuilder {
         public static final String DATA_TYPE_KEY = "type";
         public static final String DATA_TYPE_DOC = "Type of the variable";
 
+        public static final String SCOPE_LABEL = "Connection Scope";
+        public static final String SCOPE_KEY = "scope";
+        public static final String SCOPE_DOC = "Scope of the connection, Global or Local";
+
         private final Map<String, Property> nodeProperties;
         private final SemanticModel semanticModel;
         protected Property.Builder propertyBuilder;
@@ -305,7 +311,8 @@ public abstract class NodeBuilder {
             return this;
         }
 
-        public PropertiesBuilder<T> callExpression(ExpressionNode expressionNode, String key, Property propertyTemplate) {
+        public PropertiesBuilder<T> callExpression(ExpressionNode expressionNode, String key,
+                                                   Property propertyTemplate) {
             Property client = Property.Builder.getInstance()
                     .metadata()
                     .label(propertyTemplate.metadata().label())
@@ -549,6 +556,20 @@ public abstract class NodeBuilder {
                     .editable()
                     .build();
             addProperty(info.key(), property);
+            return this;
+        }
+
+        public PropertiesBuilder<T> scope() {
+            Property property = propertyBuilder
+                    .metadata()
+                    .label(SCOPE_LABEL)
+                    .description(SCOPE_DOC)
+                    .stepOut()
+                    .type(Property.ValueType.ENUM)
+                    .value("Global")
+                    .editable()
+                    .build();
+            addProperty(SCOPE_KEY, property);
             return this;
         }
 
