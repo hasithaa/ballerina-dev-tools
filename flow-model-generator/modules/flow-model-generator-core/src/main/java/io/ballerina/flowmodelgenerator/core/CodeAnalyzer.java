@@ -100,14 +100,12 @@ class CodeAnalyzer extends NodeVisitor {
     private final Stack<NodeBuilder> flowNodeBuilderStack;
     private final Central central;
     private TypedBindingPatternNode typedBindingPatternNode;
-    private boolean buildConnection;
 
     public CodeAnalyzer(SemanticModel semanticModel) {
         this.flowNodeList = new ArrayList<>();
         this.semanticModel = semanticModel;
         this.flowNodeBuilderStack = new Stack<>();
         this.central = new CentralProxy();
-        this.buildConnection = false;
     }
 
     @Override
@@ -313,10 +311,7 @@ class CodeAnalyzer extends NodeVisitor {
                                 .orElseThrow();
                 methodSymbol.typeDescriptor().params().ifPresent(params -> nodeBuilder.properties().functionArguments(
                         argumentNodes, params, nodeTemplate.properties()));
-
-            } catch (RuntimeException ignored) {
-            }
-            buildConnection = true;
+            } catch (RuntimeException ignored) {}
             return;
         }
         startNode(FlowNode.Kind.EXPRESSION);
