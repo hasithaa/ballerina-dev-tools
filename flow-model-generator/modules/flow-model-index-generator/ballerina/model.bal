@@ -13,18 +13,11 @@ type DataConnections record {
     DataConnectionGroup[] groups;
 };
 
-type IndexKeyword record {|
-    string org;
-    string module;
-    string version;
-    string?[] ids;
-    string icon?;
-|};
-
 type IndexMetadata record {|
     string label;
     string description?;
     string[] keywords?;
+    string icon?;
     json...;
 |};
 

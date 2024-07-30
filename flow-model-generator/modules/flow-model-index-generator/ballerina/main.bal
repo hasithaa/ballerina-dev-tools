@@ -1,15 +1,13 @@
 import ballerina/data.jsondata;
+import ballerina/file;
 import ballerina/http;
 import ballerina/io;
 import ballerina/log;
 
-const string PATH_INDEX = "../index/";
+const string PATH_INDEX = "../../flow-model-generator-ls-extension/src/main/resources/";
 const string PATH_CONNECTION_JSON = "connections.json";
 const string PATH_NODE_TEMPLATE_JSON = "node_templates.json";
 const string PATH_SOURCE = "../source/";
-
-// TODO: Use the correct client. Using http since NO SDL client is available.
-http:Client gqlCL = check new ("https://api.central.ballerina.io/2.0/graphql");
 
 type ModuleConfig record {|
     string org;
@@ -17,6 +15,7 @@ type ModuleConfig record {|
     string icon;
     map<string> sources = {};
     string[] connections = [];
+    map<string> connectionsDescriptions = {};
     string[] functions = [];
 |};
 
@@ -35,11 +34,20 @@ public function main() returns error? {
 
         IndexCategory indexCategory = {
             metadata: {label: groups.label},
-            items: <IndexNode[]>[]
+            items: <IndexCategory[]>[]
         };
         connections.items.push(indexCategory);
         foreach DataConnection connection in groups.items {
 
+            ModuleConfig config = modules.get(connection.ref[0] + "/" + connection.ref[1]);
+
+            string connectionsDescriptions = config.connectionsDescriptions.get(connection.ref[2]);
+
+            IndexCategory indexSubCategory = {
+                metadata: {label: connection.label, description: connectionsDescriptions, icon: config.icon},
+                items: <IndexNode[]>[]
+            };
+            indexCategory.items.push(indexSubCategory);
             string keyPrefix = string `${connection.ref[0]}:${connection.ref[1]}:${connection.ref[2]}`;
             string[] clientNodesNames = nodeTemplates.keys().filter(k => k.includes(keyPrefix));
             foreach string key in clientNodesNames {
@@ -49,7 +57,7 @@ public function main() returns error? {
                     codedata: template.codedata,
                     enabled: true
                 };
-                indexCategory.items.push(node);
+                indexSubCategory.items.push(node);
             }
         }
     }
@@ -74,19 +82,25 @@ function generateNodeTemplates(ModuleConfig config, IndexNodeTemplateMap nodeTem
             log:printError("Client not found: " + cl, config = config);
             continue;
         }
+        config.connectionsDescriptions[cl] = connection.description;
 
         // handle Init method
         IndexNodeTemplate initTemplate = handleInitMethod([config.org, config.module, cl], connection);
         nodeTemplates[string `NEW_CONNECTION:${config.org}:${config.module}:${cl}:init`] = initTemplate;
+        initTemplate.metadata.icon = config.icon;
 
         IndexNodeTemplate[] templates = handleRemoteMethods([config.org, config.module, cl], connection);
         foreach IndexNodeTemplate template in templates {
             nodeTemplates[string `ACTION_CALL:${config.org}:${config.module}:${cl}:${template.codedata.symbol}`] = template;
+            template.metadata.icon = config.icon;
         }
     }
 }
 
 function fetchData() returns map<ModuleConfig>|error {
+
+    // TODO: Use the correct client. Using http since NO SDL client is available.
+    http:Client gqlCL = check new ("https://api.central.ballerina.io/2.0/graphql");
 
     map<string> orgs = {}; // Unique orgs.
     map<ModuleConfig> modules = {}; // Unique modules.
@@ -95,7 +109,12 @@ function fetchData() returns map<ModuleConfig>|error {
     foreach DataConnectionGroup groups in connectionBuilder.groups {
         foreach DataConnection connection in groups.items {
             orgs[connection.ref[0]] = connection.ref[0];
-            ModuleConfig config = {org: connection.ref[0], module: connection.ref[1], icon: ""};
+            ModuleConfig config;
+            if modules.hasKey(connection.ref[0] + "/" + connection.ref[1]) {
+                config = modules.get(connection.ref[0] + "/" + connection.ref[1]);
+            } else {
+                config = {org: connection.ref[0], module: connection.ref[1], icon: ""};
+            }
             config.connections.push(connection.ref[2]);
             modules[connection.ref[0] + "/" + connection.ref[1]] = config;
         }
@@ -103,10 +122,15 @@ function fetchData() returns map<ModuleConfig>|error {
 
     // Fetch the modules.
     foreach var org in orgs {
-        json request = {"operationName": null, "variables": {}, "query": "{\n  query: packages(orgName: \"" + org + "\", limit: 1000) {\n    packages {\n      organization\n      name\n      version\n      icon\n      keywords\n      modules {\n        name\n      }\n    }\n  }\n}\n"};
-
-        GQLPackagesResponse res = check gqlCL->post("", request);
-        check io:fileWriteJson(PATH_SOURCE + org + ".json", res.toJson());
+        string orgFile = PATH_SOURCE + org + ".json";
+        GQLPackagesResponse res;
+        if !check file:test(orgFile, file:EXISTS) {
+            res = check jsondata:parseStream(check io:fileReadBlocksAsStream(orgFile));
+        } else {
+            json request = {"operationName": null, "variables": {}, "query": "{\n  query: packages(orgName: \"" + org + "\", limit: 1000) {\n    packages {\n      organization\n      name\n      version\n      icon\n      keywords\n      modules {\n        name\n      }\n    }\n  }\n}\n"};
+            res = check gqlCL->post("", request);
+            check io:fileWriteJson(orgFile, res.toJson());
+        }
 
         foreach PackagesItem pkg in res.data.query.packages {
             foreach ModulesItem module in pkg.modules {
@@ -116,12 +140,18 @@ function fetchData() returns map<ModuleConfig>|error {
                 }
                 ModuleConfig config = modules.get(key);
 
-                json docRequest = {
-                    "operationName": null,
-                    "variables": {},
-                    "query": "{\n  query: apiDocs(inputFilter: {moduleInfo: {orgName: \"" + pkg.organization + "\", moduleName: \"" + module.name + "\", version: \"" + pkg.version + "\"}}) {\n    docsData {\n      modules {\n        clients\n        listeners\n        functions\n      }\n    }\n  }\n}\n"
-                };
-                GQLDocsResponse docRes = check gqlCL->post("", docRequest);
+                string moduleFile = PATH_SOURCE + key + ".json";
+                GQLDocsResponse docRes;
+                if check file:test(moduleFile, file:EXISTS) {
+                    docRes = check jsondata:parseStream(check io:fileReadBlocksAsStream(moduleFile));
+                } else {
+                    json docRequest = {
+                        "operationName": null,
+                        "variables": {},
+                        "query": "{\n  query: apiDocs(inputFilter: {moduleInfo: {orgName: \"" + pkg.organization + "\", moduleName: \"" + module.name + "\", version: \"" + pkg.version + "\"}}) {\n    docsData {\n      modules {\n        clients\n        listeners\n        functions\n      }\n    }\n  }\n}\n"
+                    };
+                    docRes = check gqlCL->post("", docRequest);
+                }
                 config.icon = pkg.icon;
                 check io:fileWriteJson(PATH_SOURCE + key + ".json", docRes.toJson());
                 foreach var [itemKey, item] in docRes.data.query.docsData.modules[0].entries() {

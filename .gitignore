@@ -39,4 +39,4 @@ build
 dist
 
 target/
-source/
+flow-model-generator/modules/flow-model-index-generator/source/
