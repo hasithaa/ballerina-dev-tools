@@ -124,7 +124,7 @@ function fetchData() returns map<ModuleConfig>|error {
     foreach var org in orgs {
         string orgFile = PATH_SOURCE + org + ".json";
         GQLPackagesResponse res;
-        if !check file:test(orgFile, file:EXISTS) {
+        if check file:test(orgFile, file:EXISTS) {
             res = check jsondata:parseStream(check io:fileReadBlocksAsStream(orgFile));
         } else {
             json request = {"operationName": null, "variables": {}, "query": "{\n  query: packages(orgName: \"" + org + "\", limit: 1000) {\n    packages {\n      organization\n      name\n      version\n      icon\n      keywords\n      modules {\n        name\n      }\n    }\n  }\n}\n"};
