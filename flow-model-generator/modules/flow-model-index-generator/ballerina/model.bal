@@ -24,7 +24,7 @@ type IndexKeyword record {|
 type IndexMetadata record {|
     string label;
     string description?;
-    string[] keywords;
+    string[] keywords?;
     json...;
 |};
 
@@ -49,7 +49,7 @@ type IndexCategory record {|
 |};
 
 type IndexConnections record {|
-    IndexCategory[] categories;
+    IndexCategory[] items;
 |};
 
 type IndexProperty record {|

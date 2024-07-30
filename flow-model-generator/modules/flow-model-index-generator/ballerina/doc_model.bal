@@ -1,6 +1,6 @@
 type Type record {
-    string name;
-    string category;
+    string name?;
+    string category?;
     boolean isAnonymousUnionType;
     boolean isInclusion;
     boolean isArrayType;
@@ -31,7 +31,7 @@ type ParametersItem record {
 
 type ReturnParametersItem record {
     Type 'type;
-    string name;
+    string name?;
     string description;
     boolean isDeprecated;
     boolean isReadOnly;
@@ -49,7 +49,79 @@ type FunctionItem record {
     anydata[] annotationAttachments;
     string name;
     string description;
-    anydata[] descriptionSections;
+    boolean isDeprecated;
+    boolean isReadOnly;
+};
+
+type RemoteMethodsItem record {
+    string accessor;
+    string resourcePath;
+    boolean isIsolated;
+    boolean isRemote;
+    boolean isResource;
+    boolean isExtern;
+    ParametersItem[] parameters;
+    ReturnParametersItem[] returnParameters;
+    anydata[] annotationAttachments;
+    string name;
+    string description;
+    boolean isDeprecated;
+    boolean isReadOnly;
+};
+
+type FieldsItem record {
+    string defaultValue;
+    anydata[] annotationAttachments;
+    Type 'type;
+    string name?;
+    string description;
+    boolean isDeprecated;
+    boolean isReadOnly;
+};
+
+type MethodsItem record {
+    string accessor;
+    string resourcePath;
+    boolean isIsolated;
+    boolean isRemote;
+    boolean isResource;
+    boolean isExtern;
+    ParametersItem[] parameters;
+    ReturnParametersItem[] returnParameters;
+    anydata[] annotationAttachments;
+    string name?;
+    string description;
+    boolean isDeprecated;
+    boolean isReadOnly;
+};
+
+type OtherMethodsItem record {
+    string accessor;
+    string resourcePath;
+    boolean isIsolated;
+    boolean isRemote;
+    boolean isResource;
+    boolean isExtern;
+    ParametersItem[] parameters;
+    ReturnParametersItem[] returnParameters;
+    anydata[] annotationAttachments;
+    string name?;
+    string description;
+    boolean isDeprecated;
+    boolean isReadOnly;
+};
+
+type ClientItem record {
+    MethodsItem initMethod?;
+    RemoteMethodsItem[] remoteMethods;
+    anydata[] resourceMethods;
+    FieldsItem[] fields;
+    MethodsItem[] methods;
+    OtherMethodsItem[] otherMethods;
+    boolean isIsolated;
+    boolean isService;
+    string name?;
+    string description;
     boolean isDeprecated;
     boolean isReadOnly;
 };
