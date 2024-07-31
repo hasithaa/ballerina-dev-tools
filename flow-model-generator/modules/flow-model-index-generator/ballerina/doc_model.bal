@@ -47,23 +47,7 @@ type FunctionItem record {
     ParametersItem[] parameters;
     ReturnParametersItem[] returnParameters;
     anydata[] annotationAttachments;
-    string name;
-    string description;
-    boolean isDeprecated;
-    boolean isReadOnly;
-};
-
-type RemoteMethodsItem record {
-    string accessor;
-    string resourcePath;
-    boolean isIsolated;
-    boolean isRemote;
-    boolean isResource;
-    boolean isExtern;
-    ParametersItem[] parameters;
-    ReturnParametersItem[] returnParameters;
-    anydata[] annotationAttachments;
-    string name;
+    string name?;
     string description;
     boolean isDeprecated;
     boolean isReadOnly;
@@ -79,45 +63,13 @@ type FieldsItem record {
     boolean isReadOnly;
 };
 
-type MethodsItem record {
-    string accessor;
-    string resourcePath;
-    boolean isIsolated;
-    boolean isRemote;
-    boolean isResource;
-    boolean isExtern;
-    ParametersItem[] parameters;
-    ReturnParametersItem[] returnParameters;
-    anydata[] annotationAttachments;
-    string name?;
-    string description;
-    boolean isDeprecated;
-    boolean isReadOnly;
-};
-
-type OtherMethodsItem record {
-    string accessor;
-    string resourcePath;
-    boolean isIsolated;
-    boolean isRemote;
-    boolean isResource;
-    boolean isExtern;
-    ParametersItem[] parameters;
-    ReturnParametersItem[] returnParameters;
-    anydata[] annotationAttachments;
-    string name?;
-    string description;
-    boolean isDeprecated;
-    boolean isReadOnly;
-};
-
 type ClientItem record {
-    MethodsItem initMethod?;
-    RemoteMethodsItem[] remoteMethods;
+    FunctionItem initMethod?;
+    FunctionItem[] remoteMethods;
     anydata[] resourceMethods;
     FieldsItem[] fields;
-    MethodsItem[] methods;
-    OtherMethodsItem[] otherMethods;
+    FunctionItem[] methods;
+    FunctionItem[] otherMethods;
     boolean isIsolated;
     boolean isService;
     string name?;

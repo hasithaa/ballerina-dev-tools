@@ -6,6 +6,7 @@ import ballerina/log;
 
 const string PATH_INDEX = "../../flow-model-generator-ls-extension/src/main/resources/";
 const string PATH_CONNECTION_JSON = "connections.json";
+const string PATH_FUNCTION_JSON = "functions.json";
 const string PATH_NODE_TEMPLATE_JSON = "node_templates.json";
 const string PATH_SOURCE = "../source/";
 
@@ -24,20 +25,30 @@ public function main() returns error? {
     map<ModuleConfig> modules = check fetchData();
     log:printInfo("Fetched modules ", modules = modules.keys());
 
-    IndexConnections connections = {items: []};
+    IndexAvilableNodes connections = {items: []};
+    IndexAvilableNodes functions = {items: []};
     IndexNodeTemplateMap nodeTemplates = {};
     foreach var config in modules {
-        check generateNodeTemplates(config, nodeTemplates);
+        check generateConnectionNodeTemplates(config, nodeTemplates);
+        check generateFunctionNodeTemplates(config, nodeTemplates);
     }
+    check generateConnectionIndex(modules, connections, nodeTemplates);
+    check generateFunctionIndex(modules, functions, nodeTemplates);
 
-    foreach DataConnectionGroup groups in connectionBuilder.groups {
+    check io:fileWriteJson(PATH_INDEX + PATH_NODE_TEMPLATE_JSON, nodeTemplates);
+    check io:fileWriteJson(PATH_INDEX + PATH_CONNECTION_JSON, connections);
+    check io:fileWriteJson(PATH_INDEX + PATH_FUNCTION_JSON, functions);
+}
+
+function generateConnectionIndex(map<ModuleConfig> modules, IndexAvilableNodes connections, IndexNodeTemplateMap nodeTemplates) returns error? {
+    foreach DataGroups groups in prebuildConnections.groups {
 
         IndexCategory indexCategory = {
             metadata: {label: groups.label},
             items: <IndexCategory[]>[]
         };
         connections.items.push(indexCategory);
-        foreach DataConnection connection in groups.items {
+        foreach DataItem connection in groups.items {
 
             ModuleConfig config = modules.get(connection.ref[0] + "/" + connection.ref[1]);
 
@@ -49,7 +60,8 @@ public function main() returns error? {
             };
             indexCategory.items.push(indexSubCategory);
             string keyPrefix = string `${connection.ref[0]}:${connection.ref[1]}:${connection.ref[2]}`;
-            string[] clientNodesNames = nodeTemplates.keys().filter(k => k.includes(keyPrefix));
+            string[] clientNodesNames =
+                nodeTemplates.keys().filter(k => k.includes(keyPrefix) && (k.includes("ACTION_CALL") || k.includes("NEW_CONNECTION")));
             foreach string key in clientNodesNames {
                 IndexNodeTemplate template = nodeTemplates.get(key);
                 IndexNode node = {
@@ -61,11 +73,41 @@ public function main() returns error? {
             }
         }
     }
-    check io:fileWriteJson(PATH_INDEX + PATH_NODE_TEMPLATE_JSON, nodeTemplates);
-    check io:fileWriteJson(PATH_INDEX + PATH_CONNECTION_JSON, connections);
 }
 
-function generateNodeTemplates(ModuleConfig config, IndexNodeTemplateMap nodeTemplates) returns error? {
+function generateFunctionIndex(map<ModuleConfig> modules, IndexAvilableNodes functions, IndexNodeTemplateMap nodeTemplates) returns error? {
+    foreach DataGroups groups in prebuildFunctions.groups {
+
+        IndexCategory indexCategory = {
+            metadata: {label: groups.label},
+            items: <IndexCategory[]>[]
+        };
+        functions.items.push(indexCategory);
+        foreach DataItem connection in groups.items {
+
+            ModuleConfig config = modules.get(connection.ref[0] + "/" + connection.ref[1]);
+            IndexCategory indexSubCategory = {
+                metadata: {label: connection.label},
+                items: <IndexNode[]>[]
+            };
+            indexCategory.items.push(indexSubCategory);
+            string keyPrefix = string `${connection.ref[0]}:${connection.ref[1]}:${connection.ref[2]}`;
+            string[] clientNodesNames =
+                nodeTemplates.keys().filter(k => k.includes(keyPrefix) && k.includes("FUNCTION_CALL"));
+            foreach string key in clientNodesNames {
+                IndexNodeTemplate template = nodeTemplates.get(key);
+                IndexNode node = {
+                    metadata: template.metadata,
+                    codedata: template.codedata,
+                    enabled: true
+                };
+                indexSubCategory.items.push(node);
+            }
+        }
+    }
+}
+
+function generateConnectionNodeTemplates(ModuleConfig config, IndexNodeTemplateMap nodeTemplates) returns error? {
     if config.connections.length() == 0 {
         return;
     }
@@ -97,6 +139,30 @@ function generateNodeTemplates(ModuleConfig config, IndexNodeTemplateMap nodeTem
     }
 }
 
+function generateFunctionNodeTemplates(ModuleConfig config, IndexNodeTemplateMap nodeTemplates) returns error? {
+    if config.functions.length() == 0 {
+        return;
+    }
+    FunctionItem[] funcData = check jsondata:parseStream(check io:fileReadBlocksAsStream(config.sources.get("functions")));
+    foreach string funName in config.functions {
+        FunctionItem? func = ();
+        foreach FunctionItem data in funcData {
+            if data.name == funName {
+                func = data;
+                break;
+            }
+        }
+        if func == () {
+            log:printError("Function not found: " + funName, config = config);
+            continue;
+        }
+
+        IndexNodeTemplate template = handleFunction([config.org, config.module, funName], func);
+        nodeTemplates[string `FUNCTION_CALL:${config.org}:${config.module}:${funName}:${template.codedata.symbol}`] = template;
+        template.metadata.icon = config.icon;
+    }
+}
+
 function fetchData() returns map<ModuleConfig>|error {
 
     // TODO: Use the correct client. Using http since NO SDL client is available.
@@ -106,8 +172,8 @@ function fetchData() returns map<ModuleConfig>|error {
     map<ModuleConfig> modules = {}; // Unique modules.
 
     // Build a list of modules to fetch, from the ref in the groups.
-    foreach DataConnectionGroup groups in connectionBuilder.groups {
-        foreach DataConnection connection in groups.items {
+    foreach DataGroups groups in prebuildConnections.groups {
+        foreach DataItem connection in groups.items {
             orgs[connection.ref[0]] = connection.ref[0];
             ModuleConfig config;
             if modules.hasKey(connection.ref[0] + "/" + connection.ref[1]) {
@@ -117,6 +183,22 @@ function fetchData() returns map<ModuleConfig>|error {
             }
             config.connections.push(connection.ref[2]);
             modules[connection.ref[0] + "/" + connection.ref[1]] = config;
+        }
+    }
+    foreach DataGroups groups in prebuildFunctions.groups {
+        foreach DataItem func in groups.items {
+            if func.enabled == false {
+                continue;
+            }
+            orgs[func.ref[0]] = func.ref[0];
+            ModuleConfig config;
+            if modules.hasKey(func.ref[0] + "/" + func.ref[1]) {
+                config = modules.get(func.ref[0] + "/" + func.ref[1]);
+            } else {
+                config = {org: func.ref[0], module: func.ref[1], icon: ""};
+            }
+            config.functions.push(func.ref[2]);
+            modules[func.ref[0] + "/" + func.ref[1]] = config;
         }
     }
 
@@ -213,10 +295,10 @@ function handleInitMethod([string, string, string] ref, ClientItem connection) r
     };
 
     // Find init method.
-    MethodsItem? init = connection.initMethod;
+    FunctionItem? init = connection.initMethod;
     if init is () {
         // Check for method parameters
-        MethodsItem[] methods = connection.methods;
+        FunctionItem[] methods = connection.methods;
         if methods.length() == 0 || methods.filter(m => m.name == "init").length() == 0 {
             // No explicit init method found
         } else {
@@ -225,7 +307,7 @@ function handleInitMethod([string, string, string] ref, ClientItem connection) r
     }
     if init !is () {
         // Add method parameters as properties
-        handleMethodParameters(init, properties, false);
+        handleFunctionParameters(init, properties, false);
     }
 
     // TODO: Check init contains errors. Use category field. Following is a temporary fix. 
@@ -233,13 +315,14 @@ function handleInitMethod([string, string, string] ref, ClientItem connection) r
     return initTemplate;
 }
 
+// LS: Bug rename following method.
 function handleRemoteMethods([string, string, string] ref, ClientItem connection) returns IndexNodeTemplate[] {
     IndexNodeTemplate[] templates = [];
-    RemoteMethodsItem[] methods = connection.remoteMethods;
-    foreach RemoteMethodsItem method in methods {
+    FunctionItem[] methods = connection.remoteMethods;
+    foreach FunctionItem method in methods {
         IndexNodeTemplate template = {
-            metadata: {label: method.name, description: method.description},
-            codedata: {node: "ACTION_CALL", module: ref[1], symbol: method.name, org: ref[0], 'object: ref[2]},
+            metadata: {label: <string>method.name, description: method.description},
+            codedata: {node: "ACTION_CALL", module: ref[1], symbol: <string>method.name, org: ref[0], 'object: ref[2]},
             properties: {},
             flags: 0
         };
@@ -279,13 +362,53 @@ function handleRemoteMethods([string, string, string] ref, ClientItem connection
             editable: false,
             'order: 2
         };
-        handleRemoteMethodParameters(method, properties);
+        handleFunctionParameters(method, properties);
 
         // TODO: Check init contains errors. Use category field. Following is a temporary fix. 
         setCheckedFlag(template);
         templates.push(template);
     }
     return templates;
+}
+
+function handleFunction([string, string, string] ref, FunctionItem func) returns IndexNodeTemplate {
+    IndexNodeTemplate template = {
+        metadata: {label: <string>func.name, description: func.description},
+        codedata: {node: "FUNCTION_CALL", module: ref[1], symbol: <string>func.name, org: ref[0]},
+        properties: {},
+        flags: 0
+    };
+    string prefix = ref[1];
+    if ref[1].includes(".") {
+        prefix = ref[1].substring(<int>ref[1].lastIndexOf(".") + 1);
+    }
+    template.codedata["importStmt"] = "import " + ref[0] + "/" + ref[1] + " as " + prefix;
+
+    map<IndexProperty> properties = {};
+
+    properties["variable"] = {
+        metadata: {label: "Variable", description: "Variable to store the connection"},
+        valueType: "Identifier",
+        value: "res",
+        optional: false,
+        editable: true,
+        'order: 0,
+        valueTypeConstraints: {identifier: {isExistingVariable: false, isNewVariable: true}}
+    };
+    // We fix this later when we have the return type of the remote method
+    properties["type"] = {
+        metadata: {label: "Type", description: "Type of the result"},
+        value: "", // Fixed with return type
+        valueType: "Type",
+        optional: false,
+        editable: false,
+        'order: 1
+    };
+    handleFunctionParameters(func, properties);
+
+    // TODO: Check init contains errors. Use category field. Following is a temporary fix. 
+    setCheckedFlag(template);
+    return template;
 }
 
 function setCheckedFlag(IndexNodeTemplate template) {
@@ -297,27 +420,7 @@ function setCheckedFlag(IndexNodeTemplate template) {
     }
 }
 
-function handleMethodParameters(MethodsItem method, map<IndexProperty> properties, boolean handleReturn = true) {
-    Type? dependentlyTyped = ();
-    foreach ParametersItem item in method.parameters {
-        if handleReturn && item.defaultValue == "<>" {
-            // This is dependently Typed function
-            dependentlyTyped = item.'type;
-        }
-        properties[item.name] = {
-            metadata: {label: item.name, description: item.description},
-            valueType: "Expression",
-            value: item.defaultValue,
-            optional: item.defaultValue != "" && item.defaultValue != "<>",
-            editable: true,
-            valueTypeConstraints: {'type: item.'type.toJson()},
-            'order: properties.length()
-        };
-    }
-    // TODO: Handle return type
-}
-
-function handleRemoteMethodParameters(RemoteMethodsItem method, map<IndexProperty> properties, boolean handleReturn = true) {
+function handleFunctionParameters(FunctionItem method, map<IndexProperty> properties, boolean handleReturn = true) {
     Type? dependentlyTyped = ();
     foreach ParametersItem item in method.parameters {
         if handleReturn && item.defaultValue == "<>" {

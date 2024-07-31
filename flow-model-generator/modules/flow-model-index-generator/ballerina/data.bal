@@ -1,4 +1,4 @@
-final DataConnections connectionBuilder = {
+final DataSet prebuildConnections = {
     groups: [
         {
             label: "Network",
@@ -42,10 +42,10 @@ final DataConnections connectionBuilder = {
                     label: "MS SQL",
                     ref: ["ballerinax", "mssql", "Client"]
                 },
-                // {
-                //     label: "Oracle",
-                //     ref: ["ballerinax", "oracle", "Client"]
-                // },
+                {
+                    label: "Oracle",
+                    ref: ["ballerinax", "oracledb", "Client"]
+                },
                 {
                     label: "MongoDB",
                     ref: ["ballerinax", "mongodb", "Client"]
@@ -53,6 +53,112 @@ final DataConnections connectionBuilder = {
                 {
                     label: "PostgreSQL",
                     ref: ["ballerinax", "postgresql", "Client"]
+                }
+            ]
+        }
+    ]
+};
+
+final DataSet prebuildFunctions = {
+    groups: [
+        {
+            label: "Logging",
+            items: [
+                {
+                    label: "Log Info",
+                    ref: ["ballerina", "log", "printInfo"]
+                },
+                {
+                    label: "Log Error",
+                    ref: ["ballerina", "log", "printError"]
+                },
+                {
+                    label: "Log Warn",
+                    ref: ["ballerina", "log", "printWarn"]
+                },
+                {
+                    label: "Log Debug",
+                    ref: ["ballerina", "log", "printDebug"]
+                }
+            ]
+        },
+        {
+            label: "Data Conversion",
+            items: [
+                {
+                    label: "Schema To JSON",
+                    ref: ["ballerina", "data.jsondata", "toJson"]
+                },
+                {
+                    label: "Schema To XML",
+                    ref: ["ballerina", "data.xmldata", "toXml"]
+                },
+                {
+                    label: "JSON To Schema",
+                    ref: ["ballerina", "data.jsondata", "parseAsType"]
+                },
+                {
+                    label: "XML To Schema",
+                    ref: ["ballerina", "data.xmldata", "parseAsType"]
+                }
+            ]
+        },
+        {
+            label: "JSON",
+            items: [
+                {
+                    label: "Evaluate JSON Path",
+                    ref: ["ballerina", "data.jsondata", "read"]
+                },
+                {
+                    label: "JSON Pretty Print",
+                    ref: ["ballerina", "data.jsondata", "prettify"]
+                }
+            ]
+        },
+        {
+            label: "XML",
+            items: [
+                {
+                    label: "XSLT Transform",
+                    ref: ["ballerina", "xslt", "transform"]
+                }
+            ]
+        },
+        {
+            label: "File Data",
+            items: [
+                {
+                    label: "Read CSV",
+                    ref: ["ballerina", "io", "fileReadCsv"]
+                },
+                {
+                    label: "Read JSON",
+                    ref: ["ballerina", "io", "fileReadJson"]
+                },
+                {
+                    label: "Read Bytes",
+                    ref: ["ballerina", "io", "fileReadBytes"]
+                },
+                {
+                    label: "Read XML",
+                    ref: ["ballerina", "io", "fileReadXml"]
+                },
+                {
+                    label: "Write CSV",
+                    ref: ["ballerina", "io", "fileWriteCsv"]
+                },
+                {
+                    label: "Write JSON",
+                    ref: ["ballerina", "io", "fileWriteJson"]
+                },
+                {
+                    label: "Write Bytes",
+                    ref: ["ballerina", "io", "fileWriteBytes"]
+                },
+                {
+                    label: "Write XML",
+                    ref: ["ballerina", "io", "fileWriteXml"]
                 }
             ]
         }

@@ -1,16 +1,17 @@
-type DataConnection record {
+type DataItem record {
     string label;
     [string, string, string] ref;
-    string[] popular?;
+    string[] popular?; // TODO: implement this.
+    boolean enabled?;
 };
 
-type DataConnectionGroup record {
+type DataGroups record {
     string label;
-    DataConnection[] items;
+    DataItem[] items;
 };
 
-type DataConnections record {
-    DataConnectionGroup[] groups;
+type DataSet record {
+    DataGroups[] groups;
 };
 
 type IndexMetadata record {|
@@ -41,7 +42,7 @@ type IndexCategory record {|
     IndexNode[]|IndexCategory[] items;
 |};
 
-type IndexConnections record {|
+type IndexAvilableNodes record {|
     IndexCategory[] items;
 |};
 
