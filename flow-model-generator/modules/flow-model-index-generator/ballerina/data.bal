@@ -1,5 +1,5 @@
-final DataSet prebuildConnections = {
-    groups: [
+final DataSet prebuiltDataSet = {
+    connections: [
         {
             label: "Network",
             items: [
@@ -56,11 +56,8 @@ final DataSet prebuildConnections = {
                 }
             ]
         }
-    ]
-};
-
-final DataSet prebuildFunctions = {
-    groups: [
+    ],
+    functions: [
         {
             label: "Logging",
             items: [
@@ -164,3 +161,20 @@ final DataSet prebuildFunctions = {
         }
     ]
 };
+
+type DataItem record {|
+    string label;
+    [string, string, string] ref;
+    string[] popular?; // TODO: implement this.
+    boolean enabled?;
+|};
+
+type DataGroup record {|
+    string label;
+    DataItem[] items;
+|};
+
+type DataSet record {|
+    DataGroup[] connections;
+    DataGroup[] functions;
+|};

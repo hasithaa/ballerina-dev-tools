@@ -1,6 +1,4 @@
 import ballerina/data.jsondata;
-import ballerina/file;
-import ballerina/http;
 import ballerina/io;
 import ballerina/log;
 
@@ -11,9 +9,9 @@ const string PATH_NODE_TEMPLATE_JSON = "node_templates.json";
 const string PATH_SOURCE = "../source/";
 
 type ModuleConfig record {|
-    string org;
-    string module;
-    string icon;
+    string orgName;
+    string moduleName;
+    string icon = "";
     map<string> sources = {};
     string[] connections = [];
     map<string> connectionsDescriptions = {};
@@ -22,7 +20,7 @@ type ModuleConfig record {|
 
 public function main() returns error? {
 
-    map<ModuleConfig> modules = check fetchData();
+    map<ModuleConfig> modules = check fetchDataFromRemoteAPI();
     log:printInfo("Fetched modules ", modules = modules.keys());
 
     IndexAvilableNodes connections = {items: []};
@@ -41,7 +39,7 @@ public function main() returns error? {
 }
 
 function generateConnectionIndex(map<ModuleConfig> modules, IndexAvilableNodes connections, IndexNodeTemplateMap nodeTemplates) returns error? {
-    foreach DataGroups groups in prebuildConnections.groups {
+    foreach DataGroup groups in prebuiltDataSet.connections {
 
         IndexCategory indexCategory = {
             metadata: {label: groups.label},
@@ -76,7 +74,7 @@ function generateConnectionIndex(map<ModuleConfig> modules, IndexAvilableNodes c
 }
 
 function generateFunctionIndex(map<ModuleConfig> modules, IndexAvilableNodes functions, IndexNodeTemplateMap nodeTemplates) returns error? {
-    foreach DataGroups groups in prebuildFunctions.groups {
+    foreach DataGroup groups in prebuiltDataSet.functions {
 
         IndexCategory indexCategory = {
             metadata: {label: groups.label},
@@ -127,13 +125,13 @@ function generateConnectionNodeTemplates(ModuleConfig config, IndexNodeTemplateM
         config.connectionsDescriptions[cl] = connection.description;
 
         // handle Init method
-        IndexNodeTemplate initTemplate = handleInitMethod([config.org, config.module, cl], connection);
-        nodeTemplates[string `NEW_CONNECTION:${config.org}:${config.module}:${cl}:init`] = initTemplate;
+        IndexNodeTemplate initTemplate = handleInitMethod([config.orgName, config.moduleName, cl], connection);
+        nodeTemplates[string `NEW_CONNECTION:${config.orgName}:${config.moduleName}:${cl}:init`] = initTemplate;
         initTemplate.metadata.icon = config.icon;
 
-        IndexNodeTemplate[] templates = handleRemoteMethods([config.org, config.module, cl], connection);
+        IndexNodeTemplate[] templates = handleRemoteMethods([config.orgName, config.moduleName, cl], connection);
         foreach IndexNodeTemplate template in templates {
-            nodeTemplates[string `ACTION_CALL:${config.org}:${config.module}:${cl}:${template.codedata.symbol}`] = template;
+            nodeTemplates[string `ACTION_CALL:${config.orgName}:${config.moduleName}:${cl}:${template.codedata.symbol}`] = template;
             template.metadata.icon = config.icon;
         }
     }
@@ -157,97 +155,10 @@ function generateFunctionNodeTemplates(ModuleConfig config, IndexNodeTemplateMap
             continue;
         }
 
-        IndexNodeTemplate template = handleFunction([config.org, config.module, funName], func);
-        nodeTemplates[string `FUNCTION_CALL:${config.org}:${config.module}:${funName}:${template.codedata.symbol}`] = template;
+        IndexNodeTemplate template = handleFunction([config.orgName, config.moduleName, funName], func);
+        nodeTemplates[string `FUNCTION_CALL:${config.orgName}:${config.moduleName}:${funName}`] = template;
         template.metadata.icon = config.icon;
     }
-}
-
-function fetchData() returns map<ModuleConfig>|error {
-
-    // TODO: Use the correct client. Using http since NO SDL client is available.
-    http:Client gqlCL = check new ("https://api.central.ballerina.io/2.0/graphql");
-
-    map<string> orgs = {}; // Unique orgs.
-    map<ModuleConfig> modules = {}; // Unique modules.
-
-    // Build a list of modules to fetch, from the ref in the groups.
-    foreach DataGroups groups in prebuildConnections.groups {
-        foreach DataItem connection in groups.items {
-            orgs[connection.ref[0]] = connection.ref[0];
-            ModuleConfig config;
-            if modules.hasKey(connection.ref[0] + "/" + connection.ref[1]) {
-                config = modules.get(connection.ref[0] + "/" + connection.ref[1]);
-            } else {
-                config = {org: connection.ref[0], module: connection.ref[1], icon: ""};
-            }
-            config.connections.push(connection.ref[2]);
-            modules[connection.ref[0] + "/" + connection.ref[1]] = config;
-        }
-    }
-    foreach DataGroups groups in prebuildFunctions.groups {
-        foreach DataItem func in groups.items {
-            if func.enabled == false {
-                continue;
-            }
-            orgs[func.ref[0]] = func.ref[0];
-            ModuleConfig config;
-            if modules.hasKey(func.ref[0] + "/" + func.ref[1]) {
-                config = modules.get(func.ref[0] + "/" + func.ref[1]);
-            } else {
-                config = {org: func.ref[0], module: func.ref[1], icon: ""};
-            }
-            config.functions.push(func.ref[2]);
-            modules[func.ref[0] + "/" + func.ref[1]] = config;
-        }
-    }
-
-    // Fetch the modules.
-    foreach var org in orgs {
-        string orgFile = PATH_SOURCE + org + ".json";
-        GQLPackagesResponse res;
-        if check file:test(orgFile, file:EXISTS) {
-            res = check jsondata:parseStream(check io:fileReadBlocksAsStream(orgFile));
-        } else {
-            json request = {"operationName": null, "variables": {}, "query": "{\n  query: packages(orgName: \"" + org + "\", limit: 1000) {\n    packages {\n      organization\n      name\n      version\n      icon\n      keywords\n      modules {\n        name\n      }\n    }\n  }\n}\n"};
-            res = check gqlCL->post("", request);
-            check io:fileWriteJson(orgFile, res.toJson());
-        }
-
-        foreach PackagesItem pkg in res.data.query.packages {
-            foreach ModulesItem module in pkg.modules {
-                final string key = pkg.organization + "/" + module.name;
-                if !modules.hasKey(key) {
-                    continue;
-                }
-                ModuleConfig config = modules.get(key);
-
-                string moduleFile = PATH_SOURCE + key + ".json";
-                GQLDocsResponse docRes;
-                if check file:test(moduleFile, file:EXISTS) {
-                    docRes = check jsondata:parseStream(check io:fileReadBlocksAsStream(moduleFile));
-                } else {
-                    json docRequest = {
-                        "operationName": null,
-                        "variables": {},
-                        "query": "{\n  query: apiDocs(inputFilter: {moduleInfo: {orgName: \"" + pkg.organization + "\", moduleName: \"" + module.name + "\", version: \"" + pkg.version + "\"}}) {\n    docsData {\n      modules {\n        clients\n        listeners\n        functions\n      }\n    }\n  }\n}\n"
-                    };
-                    docRes = check gqlCL->post("", docRequest);
-                }
-                config.icon = pkg.icon;
-                check io:fileWriteJson(PATH_SOURCE + key + ".json", docRes.toJson());
-                foreach var [itemKey, item] in docRes.data.query.docsData.modules[0].entries() {
-                    if item !is string {
-                        continue;
-                    }
-                    final string file = PATH_SOURCE + key + "_" + itemKey + ".json";
-                    config.sources[itemKey] = file;
-                    check io:fileWriteJson(file, <json>check jsondata:parseString(item));
-                }
-            }
-        }
-    }
-    return modules;
 }
 
 function handleInitMethod([string, string, string] ref, ClientItem connection) returns IndexNodeTemplate {
@@ -332,37 +243,35 @@ function handleRemoteMethods([string, string, string] ref, ClientItem connection
         }
         template.codedata["importStmt"] = "import " + ref[0] + "/" + ref[1] + " as " + prefix;
 
-        map<IndexProperty> properties = {};
-        template.properties = properties;
-        properties["connection"] = {
+        template.properties["connection"] = {
             metadata: {label: "Connection", description: "Connection to use"},
             valueType: "Identifier",
             value: "connection",
             optional: false,
             editable: true,
-            'order: 0,
+            'order: template.properties.length(),
             valueTypeConstraints: {'type: {typeOf: prefix + ":" + ref[2]}, identifier: {isExistingVariable: true, isNewVariable: false}}
         };
 
-        properties["variable"] = {
+        template.properties["variable"] = {
             metadata: {label: "Variable", description: "Variable to store the connection"},
             valueType: "Identifier",
             value: "res",
             optional: false,
             editable: true,
-            'order: 1,
+            'order: template.properties.length(),
             valueTypeConstraints: {identifier: {isExistingVariable: false, isNewVariable: true}}
         };
         // We fix this later when we have the return type of the remote method
-        properties["type"] = {
+        template.properties["type"] = {
             metadata: {label: "Type", description: "Type of the result"},
             value: "", // Fixed with return type
             valueType: "Type",
             optional: false,
             editable: false,
-            'order: 2
+            'order: template.properties.length()
         };
-        handleFunctionParameters(method, properties);
+        handleFunctionParameters(method, template.properties);
 
         // TODO: Check init contains errors. Use category field. Following is a temporary fix. 
         setCheckedFlag(template);
@@ -384,27 +293,25 @@ function handleFunction([string, string, string] ref, FunctionItem func) returns
     }
     template.codedata["importStmt"] = "import " + ref[0] + "/" + ref[1] + " as " + prefix;
 
-    map<IndexProperty> properties = {};
-
-    properties["variable"] = {
+    template.properties["variable"] = {
         metadata: {label: "Variable", description: "Variable to store the connection"},
         valueType: "Identifier",
         value: "res",
         optional: false,
         editable: true,
-        'order: 0,
+        'order: template.properties.length(),
         valueTypeConstraints: {identifier: {isExistingVariable: false, isNewVariable: true}}
     };
     // We fix this later when we have the return type of the remote method
-    properties["type"] = {
+    template.properties["type"] = {
         metadata: {label: "Type", description: "Type of the result"},
         value: "", // Fixed with return type
         valueType: "Type",
         optional: false,
         editable: false,
-        'order: 1
+        'order: template.properties.length()
     };
-    handleFunctionParameters(func, properties);
+    handleFunctionParameters(func, template.properties);
 
     // TODO: Check init contains errors. Use category field. Following is a temporary fix. 
     setCheckedFlag(template);

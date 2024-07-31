@@ -1,19 +1,3 @@
-type DataItem record {
-    string label;
-    [string, string, string] ref;
-    string[] popular?; // TODO: implement this.
-    boolean enabled?;
-};
-
-type DataGroups record {
-    string label;
-    DataItem[] items;
-};
-
-type DataSet record {
-    DataGroups[] groups;
-};
-
 type IndexMetadata record {|
     string label;
     string description?;
