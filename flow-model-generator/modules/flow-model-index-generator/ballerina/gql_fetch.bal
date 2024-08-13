@@ -15,25 +15,25 @@ function fetchDataFromRemoteAPI() returns map<ModuleConfig>|error {
 
     // Fetch the modules.
     foreach var org in orgs {
-        string orgFile = PATH_SOURCE + org + ".json";
+        string orgFile = getCachedDataFilePath(org);
         GQLPackagesResponse res;
         if check file:test(orgFile, file:EXISTS) {
             res = check jsondata:parseStream(check io:fileReadBlocksAsStream(orgFile));
         } else {
-            json request = {"operationName": null, "variables": {}, "query": "{\n  query: packages(orgName: \"" + org + "\", limit: 1000) {\n    packages {\n      organization\n      name\n      version\n      icon\n      keywords\n      modules {\n        name\n      }\n    }\n  }\n}\n"};
+            json request = {operationName: null, variables: {}, query: string `{  query: packages(orgName: "${org}", limit: 1000) { packages { organization name version icon keywords modules { name } } }}`};
             res = check gqlCL->post("", request);
             check io:fileWriteJson(orgFile, res.toJson());
         }
 
         foreach PackagesItem pkg in res.data.query.packages {
             foreach ModulesItem module in pkg.modules {
-                final string key = pkg.organization + "/" + module.name;
+                final string key = getModuleQName(pkg.organization, module.name);
                 if !modules.hasKey(key) {
                     continue;
                 }
                 ModuleConfig config = modules.get(key);
 
-                string moduleFile = PATH_SOURCE + key + ".json";
+                string moduleFile = getCachedDataFilePath(key);
                 GQLDocsResponse docRes;
                 if check file:test(moduleFile, file:EXISTS) {
                     docRes = check jsondata:parseStream(check io:fileReadBlocksAsStream(moduleFile));
@@ -93,4 +93,8 @@ function readPrebuiltDataAndBuildCache(map<ModuleConfig> modules, map<string> or
 
 function getModuleQName(string org, string module) returns string {
     return org + "/" + module;
+}
+
+function getCachedDataFilePath(string cache) returns string {
+    return string `${PATH_SOURCE}${cache}.json`;
 }
