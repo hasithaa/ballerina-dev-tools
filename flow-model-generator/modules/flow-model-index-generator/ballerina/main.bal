@@ -10,8 +10,8 @@ const string PATH_NODE_TEMPLATE_JSON = "node_templates.json";
 const string PATH_SOURCE = "../source/";
 
 // This program generates 3 index files from the data fetched from the remote API.
-// [ ] - Connector List with grouping and init method
-// [ ] - Connection Action List with grouping. Should this be a separate file? For now it is in the same file.
+// [x] - Connector List with grouping and init method
+// [x] - Connection Action List with grouping. Should this be a separate file? For now it is in the same file.
 // [ ] - Function List with grouping
 
 type ModuleConfig record {|
@@ -31,26 +31,30 @@ type ModuleTempResult record {|
 
 type ModuleConfigMap map<ModuleConfig>;
 
+type Index record {|
+    IndexAvilableNodes connectors = {items: []};
+    IndexConnectionNodes connections = {};
+    IndexAvilableNodes functions = {items: []};
+    IndexNodeTemplateMap nodeTemplates = {};
+|};
+
 public function main() returns error? {
 
     ModuleConfigMap moduleConfigs = check fetchDataFromRemoteAPI();
     log:printInfo("Fetched modules ", modules = moduleConfigs.keys());
 
-    IndexAvilableNodes connectors = {items: []};
-    IndexConnectionNodes connections = {};
-    IndexAvilableNodes functions = {items: []};
-    IndexNodeTemplateMap nodeTemplates = {};
+    Index index = {};
 
-    check buildConnectorIndex(moduleConfigs, connectors, connections, nodeTemplates);
+    check buildConnectorIndex(moduleConfigs, index);
     
-    check io:fileWriteJson(PATH_INDEX + PATH_NODE_TEMPLATE_JSON, nodeTemplates);
-    check io:fileWriteJson(PATH_INDEX + PATH_CONNECTOR_JSON, connectors);
-    check io:fileWriteJson(PATH_INDEX + PATH_CONNECTION_JSON, connections);
-    check io:fileWriteJson(PATH_INDEX + PATH_FUNCTION_JSON, functions);
+    check io:fileWriteJson(PATH_INDEX + PATH_NODE_TEMPLATE_JSON, index.nodeTemplates);
+    check io:fileWriteJson(PATH_INDEX + PATH_CONNECTOR_JSON, index.connectors);
+    check io:fileWriteJson(PATH_INDEX + PATH_CONNECTION_JSON, index.connections);
+    check io:fileWriteJson(PATH_INDEX + PATH_FUNCTION_JSON, index.functions);
 }
 
 // Build Connector Index. 
-function buildConnectorIndex(ModuleConfigMap modulesConfigMap, IndexAvilableNodes connectors, IndexConnectionNodes connections, IndexNodeTemplateMap nodeTemplates) returns error? {
+function buildConnectorIndex(ModuleConfigMap modulesConfigMap, Index index) returns error? {
 
     foreach DataGroup dataGroup in prebuiltDataSet.connections {
 
@@ -58,24 +62,21 @@ function buildConnectorIndex(ModuleConfigMap modulesConfigMap, IndexAvilableNode
             metadata: {label: dataGroup.label},
             items: <IndexNode[]>[]
         };
-        connectors.items.push(indexCategoryConnector);
+        index.connectors.items.push(indexCategoryConnector);
 
         foreach DataItem dataItemConnection in dataGroup.items {
-            check buildConnectorIndexForDataItem(modulesConfigMap, indexCategoryConnector, connections, dataItemConnection, nodeTemplates);
+            check buildConnectorIndexForDataItem(modulesConfigMap, index, indexCategoryConnector, dataItemConnection);
         }
     }
     cleanCachedClientData(modulesConfigMap);
 }
 
-function buildConnectorIndexForDataItem(ModuleConfigMap modulesConfigMap,
-        IndexCategory indexCategoryConnector,
-        IndexConnectionNodes indexConnectionNodes,
-        DataItem dataItemConnection,
-        IndexNodeTemplateMap nodeTemplates) returns error? {
-    var [orgName, moduleName, clientName] = dataItemConnection.ref;
+function buildConnectorIndexForDataItem(ModuleConfigMap modulesConfigMap, Index index, IndexCategory indexCategoryConnector, DataItem dataItemConnection) returns error? {
+    
+    final var [orgName, moduleName, clientName] = dataItemConnection.ref;
 
-    ModuleConfig moduleConfig = modulesConfigMap.get(getModuleQName(orgName, moduleName));
-    ClientItem? clientItem = check loadCachedClientData(moduleConfig, clientName);
+    final ModuleConfig moduleConfig = modulesConfigMap.get(getModuleQName(orgName, moduleName));
+    final ClientItem? clientItem = check loadCachedClientData(moduleConfig, clientName);
 
     if clientItem == () {
         log:printWarn("Client data not found for module: ", mod = moduleName, cl = clientItem);
@@ -85,32 +86,34 @@ function buildConnectorIndexForDataItem(ModuleConfigMap modulesConfigMap,
     final string connectionsDescriptions = clientItem.description;
 
     // handle Init method
-    IndexNodeTemplate initTemplate = handleInitMethod(dataItemConnection.ref, clientItem);
+    final IndexNodeTemplate initTemplate = handleInitMethod(dataItemConnection.ref, clientItem);
     final string connectorKey = string `NEW_CONNECTION:${orgName}:${moduleName}:${clientName}:init`;
-    nodeTemplates[connectorKey] = initTemplate;
+    index.nodeTemplates[connectorKey] = initTemplate;
     initTemplate.metadata.icon = moduleConfig.icon;
-    IndexNode connectorNode = {
+    
+    final IndexNode connectorNode = {
         metadata: {label: dataItemConnection.label, description: connectionsDescriptions, icon: moduleConfig.icon},
         codedata: initTemplate.codedata,
         enabled: true
     };
     indexCategoryConnector.items.push(connectorNode);
     
-    final IndexNode[] actions = [];
-    indexConnectionNodes[connectorKey] = actions;
+    // Handle Connection Actions
+    final IndexNode[] actionNodes = [];
+    index.connections[connectorKey] = actionNodes;
 
-    IndexNodeTemplate[] templates = handleRemoteMethods(dataItemConnection.ref, clientItem);
+    final IndexNodeTemplate[] templates = handleRemoteMethods(dataItemConnection.ref, clientItem);
     foreach IndexNodeTemplate template in templates {
-        actions.push({
+        actionNodes.push({
             metadata: template.metadata,
             codedata: template.codedata,
             enabled: true
         });
-        nodeTemplates[string `ACTION_CALL:${orgName}:${moduleName}:${clientName}:${template.codedata.symbol}`] = template;
+        index.nodeTemplates[string `ACTION_CALL:${orgName}:${moduleName}:${clientName}:${template.codedata.symbol}`] = template;
         template.metadata.icon = moduleConfig.icon;
     }
+    
     // TODO sort the actions based on the popularity and name.
-
 }
 
 
