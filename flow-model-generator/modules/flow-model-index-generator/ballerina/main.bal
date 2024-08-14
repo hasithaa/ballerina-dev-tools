@@ -1,4 +1,3 @@
-import ballerina/data.jsondata;
 import ballerina/io;
 import ballerina/log;
 
@@ -20,13 +19,6 @@ type ModuleConfig record {|
     string icon = "";
     map<string> cachedDataFiles = {};
     map<json> cachedDataJson = {};
-    string[] connections = [];
-    string[] functions = [];
-    ModuleTempResult tempResult = {};
-|};
-
-type ModuleTempResult record {|
-    ClientItem[]? clientItems = ();
 |};
 
 type ModuleConfigMap map<ModuleConfig>;
@@ -46,7 +38,8 @@ public function main() returns error? {
     Index index = {};
 
     check buildConnectorIndex(moduleConfigs, index);
-    
+    check buiildFunctionIndex(moduleConfigs, index);
+
     check io:fileWriteJson(PATH_INDEX + PATH_NODE_TEMPLATE_JSON, index.nodeTemplates);
     check io:fileWriteJson(PATH_INDEX + PATH_CONNECTOR_JSON, index.connectors);
     check io:fileWriteJson(PATH_INDEX + PATH_CONNECTION_JSON, index.connections);
@@ -58,25 +51,24 @@ function buildConnectorIndex(ModuleConfigMap modulesConfigMap, Index index) retu
 
     foreach DataGroup dataGroup in prebuiltDataSet.connections {
 
-        final IndexCategory indexCategoryConnector = {
+        final IndexCategory connectorIndexCategory = {
             metadata: {label: dataGroup.label},
             items: <IndexNode[]>[]
         };
-        index.connectors.items.push(indexCategoryConnector);
+        index.connectors.items.push(connectorIndexCategory);
 
         foreach DataItem dataItemConnection in dataGroup.items {
-            check buildConnectorIndexForDataItem(modulesConfigMap, index, indexCategoryConnector, dataItemConnection);
+            check buildConnectorIndexForDataItem(modulesConfigMap, index, connectorIndexCategory, dataItemConnection);
         }
     }
-    cleanCachedClientData(modulesConfigMap);
 }
 
-function buildConnectorIndexForDataItem(ModuleConfigMap modulesConfigMap, Index index, IndexCategory indexCategoryConnector, DataItem dataItemConnection) returns error? {
-    
+function buildConnectorIndexForDataItem(ModuleConfigMap modulesConfigMap, Index index, IndexCategory indexCategory, DataItem dataItemConnection) returns error? {
+
     final var [orgName, moduleName, clientName] = dataItemConnection.ref;
 
     final ModuleConfig moduleConfig = modulesConfigMap.get(getModuleQName(orgName, moduleName));
-    final ClientItem? clientItem = check loadCachedClientData(moduleConfig, clientName);
+    final ClientItem? clientItem = <ClientItem?>check loadCachedData(moduleConfig, clientName, CLIENTS);
 
     if clientItem == () {
         log:printWarn("Client data not found for module: ", mod = moduleName, cl = clientItem);
@@ -90,14 +82,14 @@ function buildConnectorIndexForDataItem(ModuleConfigMap modulesConfigMap, Index 
     final string connectorKey = string `NEW_CONNECTION:${orgName}:${moduleName}:${clientName}:init`;
     index.nodeTemplates[connectorKey] = initTemplate;
     initTemplate.metadata.icon = moduleConfig.icon;
-    
+
     final IndexNode connectorNode = {
         metadata: {label: dataItemConnection.label, description: connectionsDescriptions, icon: moduleConfig.icon},
         codedata: initTemplate.codedata,
         enabled: true
     };
-    indexCategoryConnector.items.push(connectorNode);
-    
+    indexCategory.items.push(connectorNode);
+
     // Handle Connection Actions
     final IndexNode[] actionNodes = [];
     index.connections[connectorKey] = actionNodes;
@@ -112,67 +104,50 @@ function buildConnectorIndexForDataItem(ModuleConfigMap modulesConfigMap, Index 
         index.nodeTemplates[string `ACTION_CALL:${orgName}:${moduleName}:${clientName}:${template.codedata.symbol}`] = template;
         template.metadata.icon = moduleConfig.icon;
     }
-    
+
     // TODO sort the actions based on the popularity and name.
 }
 
+function buiildFunctionIndex(ModuleConfigMap modulesConfigMap, Index index) returns error? {
 
-// Old Code
+    foreach DataGroup dataGroup in prebuiltDataSet.functions {
 
-function generateFunctionIndex(map<ModuleConfig> modules, IndexAvilableNodes functions, IndexNodeTemplateMap nodeTemplates) returns error? {
-    foreach DataGroup groups in prebuiltDataSet.functions {
-
-        IndexCategory indexCategory = {
-            metadata: {label: groups.label},
-            items: <IndexCategory[]>[]
+        final IndexCategory functionIndexCategory = {
+            metadata: {label: dataGroup.label},
+            items: <IndexNode[]>[]
         };
-        functions.items.push(indexCategory);
-        foreach DataItem connection in groups.items {
+        index.functions.items.push(functionIndexCategory);
 
-            ModuleConfig config = modules.get(connection.ref[0] + "/" + connection.ref[1]);
-            IndexCategory indexSubCategory = {
-                metadata: {label: connection.label},
-                items: <IndexNode[]>[]
-            };
-            indexCategory.items.push(indexSubCategory);
-            string keyPrefix = string `${connection.ref[0]}:${connection.ref[1]}:${connection.ref[2]}`;
-            string[] clientNodesNames =
-                nodeTemplates.keys().filter(k => k.includes(keyPrefix) && k.includes("FUNCTION_CALL"));
-            foreach string key in clientNodesNames {
-                IndexNodeTemplate template = nodeTemplates.get(key);
-                IndexNode node = {
-                    metadata: template.metadata,
-                    codedata: template.codedata,
-                    enabled: true
-                };
-                indexSubCategory.items.push(node);
-            }
+        foreach DataItem dataItemConnection in dataGroup.items {
+            check buildFunctionIndexForDataItem(modulesConfigMap, index, functionIndexCategory, dataItemConnection);
         }
     }
 }
 
-function generateFunctionNodeTemplates(ModuleConfig config, IndexNodeTemplateMap nodeTemplates) returns error? {
-    if config.functions.length() == 0 {
-        return;
-    }
-    FunctionItem[] funcData = check jsondata:parseStream(check io:fileReadBlocksAsStream(config.cachedDataFiles.get("functions")));
-    foreach string funName in config.functions {
-        FunctionItem? func = ();
-        foreach FunctionItem data in funcData {
-            if data.name == funName {
-                func = data;
-                break;
-            }
-        }
-        if func == () {
-            log:printError("Function not found: " + funName, config = config);
-            continue;
-        }
+function buildFunctionIndexForDataItem(ModuleConfigMap modulesConfigMap, Index index, IndexCategory indexCategory, DataItem dataItemConnection) returns error? {
 
-        IndexNodeTemplate template = handleFunction([config.orgName, config.moduleName, funName], func);
-        nodeTemplates[string `FUNCTION_CALL:${config.orgName}:${config.moduleName}:${funName}`] = template;
-        template.metadata.icon = config.icon;
+    final var [orgName, moduleName, functionName] = dataItemConnection.ref;
+
+    final ModuleConfig moduleConfig = modulesConfigMap.get(getModuleQName(orgName, moduleName));
+    final FunctionItem? functionItem = <FunctionItem?>check loadCachedData(moduleConfig, functionName, FUNCTIONS);
+
+    if functionItem == () {
+        log:printWarn("Function data not found for module: ", mod = moduleName, cl = functionItem);
+        return ();
     }
+
+    final string connectionsDescriptions = functionItem.description;
+
+    IndexNodeTemplate template = handleFunction([orgName, moduleName, functionName], functionItem);
+    index.nodeTemplates[string `FUNCTION_CALL:${orgName}:${moduleName}:${functionName}`] = template;
+    template.metadata.icon = moduleConfig.icon;
+
+    final IndexNode connectorNode = {
+        metadata: {label: dataItemConnection.label, description: connectionsDescriptions, icon: moduleConfig.icon},
+        codedata: template.codedata,
+        enabled: true
+    };
+    indexCategory.items.push(connectorNode);
 }
 
 function handleInitMethod([string, string, string] ref, ClientItem connection) returns IndexNodeTemplate {

@@ -3,13 +3,42 @@ import ballerina/file;
 import ballerina/http;
 import ballerina/io;
 
+enum DataType {
+    CLIENTS = "clients",
+    FUNCTIONS = "functions"
+}
+
+function loadCachedData(ModuleConfig moduleConfig, string key, DataType dataType) returns ClientItem|FunctionItem|error? {
+
+    json dataSource;
+    typedesc<ClientItem|FunctionItem> expectedType;
+    if CLIENTS == dataType {
+        dataSource = moduleConfig.cachedDataJson.get(CLIENTS);
+        expectedType = ClientItem;
+    } else {
+        dataSource = moduleConfig.cachedDataJson.get(FUNCTIONS);
+        expectedType = FunctionItem;
+    }
+
+    if dataSource !is json[] {
+        return error("Invalid cached data, expected an array of " + expectedType.toString());
+    }
+    foreach var item in dataSource {
+        string? name = check item.name;
+        if name == key {
+            return check jsondata:parseAsType(item, {}, expectedType);
+        }
+    }
+    return;
+}
+
 function fetchDataFromRemoteAPI() returns map<ModuleConfig>|error {
 
     // TODO: Use the correct client. Using http since no grapql-SDL client is available.
     http:Client gqlCL = check new ("https://api.central.ballerina.io/2.0/graphql");
 
-    map<ModuleConfig> modules = {}; // Unique modules.
-    map<string> orgs = {}; // Unique orgs.
+    final map<ModuleConfig> modules = {}; // Unique modules.
+    final map<string> orgs = {}; // Unique orgs.
 
     readPrebBuiltDataAndBuildCache(modules, orgs);
 
@@ -62,14 +91,14 @@ function fetchDataFromRemoteAPI() returns map<ModuleConfig>|error {
 
 function readPrebBuiltDataAndBuildCache(map<ModuleConfig> modules, map<string> orgs) {
     // Build a list of modules to fetch, from the ref in the groups.
-    foreach [string, DataGroup[]] [key, val] in prebuiltDataSet.entries() {
+    foreach DataGroup[] val in prebuiltDataSet {
         var groups = <DataGroup[]>val; // JBug: Union of the same type is not iterable.
         foreach DataGroup group in groups {
             foreach DataItem data in group.items {
                 if data.enabled == false {
                     continue;
                 }
-                final var [orgName, moduleName, symbolOrClientName] = data.ref;
+                final var [orgName, moduleName, _] = data.ref;
                 final string moduleQName = getModuleQName(orgName, moduleName);
 
                 ModuleConfig config;
@@ -77,11 +106,6 @@ function readPrebBuiltDataAndBuildCache(map<ModuleConfig> modules, map<string> o
                     config = modules.get(moduleQName);
                 } else {
                     config = {orgName, moduleName};
-                }
-                if key == "connections" {
-                    config.connections.push(symbolOrClientName);
-                } else {
-                    config.functions.push(symbolOrClientName);
                 }
                 modules[moduleQName] = config;
                 orgs[orgName] = orgName;
