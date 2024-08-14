@@ -11,7 +11,7 @@ function fetchDataFromRemoteAPI() returns map<ModuleConfig>|error {
     map<ModuleConfig> modules = {}; // Unique modules.
     map<string> orgs = {}; // Unique orgs.
 
-    readPrebuiltDataAndBuildCache(modules, orgs);
+    readPrebBuiltDataAndBuildCache(modules, orgs);
 
     // Fetch the modules.
     foreach var org in orgs {
@@ -51,9 +51,8 @@ function fetchDataFromRemoteAPI() returns map<ModuleConfig>|error {
                     if item !is string {
                         continue;
                     }
-                    final string file = PATH_SOURCE + key + "_" + itemKey + ".json";
-                    config.sources[itemKey] = file;
-                    check io:fileWriteJson(file, <json>check jsondata:parseString(item));
+                    json data = <json>check jsondata:parseString(item);
+                    config.cachedDataJson[itemKey] = data;
                 }
             }
         }
@@ -61,7 +60,7 @@ function fetchDataFromRemoteAPI() returns map<ModuleConfig>|error {
     return modules;
 }
 
-function readPrebuiltDataAndBuildCache(map<ModuleConfig> modules, map<string> orgs) {
+function readPrebBuiltDataAndBuildCache(map<ModuleConfig> modules, map<string> orgs) {
     // Build a list of modules to fetch, from the ref in the groups.
     foreach [string, DataGroup[]] [key, val] in prebuiltDataSet.entries() {
         var groups = <DataGroup[]>val; // JBug: Union of the same type is not iterable.

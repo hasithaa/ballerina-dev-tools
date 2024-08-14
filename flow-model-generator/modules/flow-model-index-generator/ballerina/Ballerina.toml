@@ -2,7 +2,7 @@
 org = "ballerinai"
 name = "flowmodel.index.generator"
 version = "0.1.0"
-distribution = "2201.9.0"
+distribution = "2201.9.3"
 
 [build-options]
 observabilityIncluded = false
