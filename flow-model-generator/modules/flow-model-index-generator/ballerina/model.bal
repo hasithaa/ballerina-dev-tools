@@ -30,6 +30,10 @@ type IndexAvilableNodes record {|
     IndexCategory[] items;
 |};
 
+type IndexConnectionNodes record {|
+    IndexNode[]...;
+|};
+
 type IndexProperty record {|
     IndexMetadata metadata;
     string valueType;

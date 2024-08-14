@@ -37,19 +37,12 @@ public function main() returns error? {
     log:printInfo("Fetched modules ", modules = moduleConfigs.keys());
 
     IndexAvilableNodes connectors = {items: []};
-    IndexAvilableNodes connections = {items: []};
+    IndexConnectionNodes connections = {};
     IndexAvilableNodes functions = {items: []};
     IndexNodeTemplateMap nodeTemplates = {};
 
-    check buildConnectorIndex(moduleConfigs, connectors, nodeTemplates);
-    // foreach var moduleConfig in moduleConfigs {
-
-        // check generateConnectionNodeTemplates(moduleConfig, nodeTemplates);
-        // check generateFunctionNodeTemplates(moduleConfig, nodeTemplates);
-    // }
-    // check generateConnectionIndex(moduleConfigs, connections, nodeTemplates);
-    // check generateFunctionIndex(moduleConfigs, functions, nodeTemplates);
-
+    check buildConnectorIndex(moduleConfigs, connectors, connections, nodeTemplates);
+    
     check io:fileWriteJson(PATH_INDEX + PATH_NODE_TEMPLATE_JSON, nodeTemplates);
     check io:fileWriteJson(PATH_INDEX + PATH_CONNECTOR_JSON, connectors);
     check io:fileWriteJson(PATH_INDEX + PATH_CONNECTION_JSON, connections);
@@ -57,7 +50,7 @@ public function main() returns error? {
 }
 
 // Build Connector Index. 
-function buildConnectorIndex(ModuleConfigMap modulesConfigMap, IndexAvilableNodes connectors, IndexNodeTemplateMap nodeTemplates) returns error? {
+function buildConnectorIndex(ModuleConfigMap modulesConfigMap, IndexAvilableNodes connectors, IndexConnectionNodes connections, IndexNodeTemplateMap nodeTemplates) returns error? {
 
     foreach DataGroup dataGroup in prebuiltDataSet.connections {
 
@@ -68,7 +61,7 @@ function buildConnectorIndex(ModuleConfigMap modulesConfigMap, IndexAvilableNode
         connectors.items.push(indexCategoryConnector);
 
         foreach DataItem dataItemConnection in dataGroup.items {
-            check buildConnectorIndexForDataItem(modulesConfigMap, indexCategoryConnector, dataItemConnection, nodeTemplates);
+            check buildConnectorIndexForDataItem(modulesConfigMap, indexCategoryConnector, connections, dataItemConnection, nodeTemplates);
         }
     }
     cleanCachedClientData(modulesConfigMap);
@@ -76,6 +69,7 @@ function buildConnectorIndex(ModuleConfigMap modulesConfigMap, IndexAvilableNode
 
 function buildConnectorIndexForDataItem(ModuleConfigMap modulesConfigMap,
         IndexCategory indexCategoryConnector,
+        IndexConnectionNodes indexConnectionNodes,
         DataItem dataItemConnection,
         IndexNodeTemplateMap nodeTemplates) returns error? {
     var [orgName, moduleName, clientName] = dataItemConnection.ref;
@@ -92,60 +86,35 @@ function buildConnectorIndexForDataItem(ModuleConfigMap modulesConfigMap,
 
     // handle Init method
     IndexNodeTemplate initTemplate = handleInitMethod(dataItemConnection.ref, clientItem);
-    nodeTemplates[string `NEW_CONNECTION:${orgName}:${moduleName}:${clientName}:init`] = initTemplate;
+    final string connectorKey = string `NEW_CONNECTION:${orgName}:${moduleName}:${clientName}:init`;
+    nodeTemplates[connectorKey] = initTemplate;
     initTemplate.metadata.icon = moduleConfig.icon;
-    IndexNode node = {
+    IndexNode connectorNode = {
         metadata: {label: dataItemConnection.label, description: connectionsDescriptions, icon: moduleConfig.icon},
         codedata: initTemplate.codedata,
         enabled: true
     };
-    indexCategoryConnector.items.push(node);
+    indexCategoryConnector.items.push(connectorNode);
+    
+    final IndexNode[] actions = [];
+    indexConnectionNodes[connectorKey] = actions;
 
     IndexNodeTemplate[] templates = handleRemoteMethods(dataItemConnection.ref, clientItem);
     foreach IndexNodeTemplate template in templates {
+        actions.push({
+            metadata: template.metadata,
+            codedata: template.codedata,
+            enabled: true
+        });
         nodeTemplates[string `ACTION_CALL:${orgName}:${moduleName}:${clientName}:${template.codedata.symbol}`] = template;
         template.metadata.icon = moduleConfig.icon;
     }
+    // TODO sort the actions based on the popularity and name.
 
 }
+
 
 // Old Code
-
-function generateConnectionIndex(map<ModuleConfig> modules, IndexAvilableNodes connections, IndexNodeTemplateMap nodeTemplates) returns error? {
-    foreach DataGroup groups in prebuiltDataSet.connections {
-
-        IndexCategory indexCategory = {
-            metadata: {label: groups.label},
-            items: <IndexCategory[]>[]
-        };
-        connections.items.push(indexCategory);
-        foreach DataItem connection in groups.items {
-
-            ModuleConfig config = modules.get(connection.ref[0] + "/" + connection.ref[1]);
-
-            string connectionsDescriptions = ""; //config.tempResult.connectionsDescriptions.get(connection.ref[2]);
-
-            IndexCategory indexSubCategory = {
-                metadata: {label: connection.label, description: connectionsDescriptions, icon: config.icon},
-                items: <IndexNode[]>[]
-            };
-            indexCategory.items.push(indexSubCategory);
-            string keyPrefix = string `${connection.ref[0]}:${connection.ref[1]}:${connection.ref[2]}`;
-            string[] clientNodesNames =
-                nodeTemplates.keys().filter(k => k.includes(keyPrefix) && (k.includes("ACTION_CALL") || k.includes("NEW_CONNECTION")));
-            foreach string key in clientNodesNames {
-                IndexNodeTemplate template = nodeTemplates.get(key);
-                IndexNode node = {
-                    metadata: template.metadata,
-                    codedata: template.codedata,
-                    enabled: true
-                };
-                indexSubCategory.items.push(node);
-            }
-        }
-    }
-
-}
 
 function generateFunctionIndex(map<ModuleConfig> modules, IndexAvilableNodes functions, IndexNodeTemplateMap nodeTemplates) returns error? {
     foreach DataGroup groups in prebuiltDataSet.functions {
@@ -175,41 +144,6 @@ function generateFunctionIndex(map<ModuleConfig> modules, IndexAvilableNodes fun
                 };
                 indexSubCategory.items.push(node);
             }
-        }
-    }
-}
-
-function generateConnectionNodeTemplates(ModuleConfig config, IndexNodeTemplateMap nodeTemplates) returns error? {
-    if config.connections.length() == 0 {
-        return;
-    }
-    ClientItem[] clientItems = check jsondata:parseStream(check io:fileReadBlocksAsStream(config.cachedDataFiles.get("clients")));
-    foreach string clientName in config.connections {
-        ClientItem? connection = ();
-
-        // Search for the client
-        foreach ClientItem clientItem in clientItems {
-            if clientItem.name == clientName {
-                connection = clientItem;
-                break;
-            }
-        }
-        if connection == () {
-            log:printError("Client not found: " + clientName, config = config);
-            continue;
-        }
-
-        //config.tempResult.connectionsDescriptions[clientName] = connection.description;
-
-        // handle Init method
-        IndexNodeTemplate initTemplate = handleInitMethod([config.orgName, config.moduleName, clientName], connection);
-        nodeTemplates[string `NEW_CONNECTION:${config.orgName}:${config.moduleName}:${clientName}:init`] = initTemplate;
-        initTemplate.metadata.icon = config.icon;
-
-        IndexNodeTemplate[] templates = handleRemoteMethods([config.orgName, config.moduleName, clientName], connection);
-        foreach IndexNodeTemplate template in templates {
-            nodeTemplates[string `ACTION_CALL:${config.orgName}:${config.moduleName}:${clientName}:${template.codedata.symbol}`] = template;
-            template.metadata.icon = config.icon;
         }
     }
 }
