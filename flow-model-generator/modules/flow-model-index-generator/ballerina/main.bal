@@ -8,23 +8,17 @@ const string PATH_FUNCTION_JSON = "functions.json";
 const string PATH_NODE_TEMPLATE_JSON = "node_templates.json";
 const string PATH_SOURCE = "../source/";
 
-// This program generates 3 index files from the data fetched from the remote API.
-// [x] - Connector List with grouping and init method
-// [x] - Connection Action List with grouping. Should this be a separate file? For now it is in the same file.
-// [ ] - Function List with grouping
-
 type ModuleConfig record {|
     string orgName;
     string moduleName;
     string icon = "";
-    map<string> cachedDataFiles = {};
     map<json> cachedDataJson = {};
 |};
 
 type ModuleConfigMap map<ModuleConfig>;
 
 type Index record {|
-    IndexAvilableNodes connectors = {items: []};
+    IndexAvilableNodes clients = {items: []};
     IndexConnectionNodes connections = {};
     IndexAvilableNodes functions = {items: []};
     IndexNodeTemplateMap nodeTemplates = {};
@@ -33,35 +27,45 @@ type Index record {|
 public function main() returns error? {
 
     ModuleConfigMap moduleConfigs = check fetchDataFromRemoteAPI();
-    log:printInfo("Fetched modules ", modules = moduleConfigs.keys());
 
     Index index = {};
-
-    check buildConnectorIndex(moduleConfigs, index);
-    check buiildFunctionIndex(moduleConfigs, index);
+    check buildIndex(moduleConfigs, index, CLIENTS);
+    check buildIndex(moduleConfigs, index, FUNCTIONS);
 
     check io:fileWriteJson(PATH_INDEX + PATH_NODE_TEMPLATE_JSON, index.nodeTemplates);
-    check io:fileWriteJson(PATH_INDEX + PATH_CONNECTOR_JSON, index.connectors);
+    check io:fileWriteJson(PATH_INDEX + PATH_CONNECTOR_JSON, index.clients);
     check io:fileWriteJson(PATH_INDEX + PATH_CONNECTION_JSON, index.connections);
     check io:fileWriteJson(PATH_INDEX + PATH_FUNCTION_JSON, index.functions);
 }
 
-// Build Connector Index. 
-function buildConnectorIndex(ModuleConfigMap modulesConfigMap, Index index) returns error? {
+function getDataGroup(DataType 'type) returns DataGroup[] {
+    return 'type == CLIENTS ? prebuiltDataSet.connections : prebuiltDataSet.functions;
+}
 
-    foreach DataGroup dataGroup in prebuiltDataSet.connections {
+function buildIndex(ModuleConfigMap modulesConfigMap, Index index, DataType dataGroupType) returns error? {
 
-        final IndexCategory connectorIndexCategory = {
+    foreach DataGroup dataGroup in getDataGroup(dataGroupType) {
+        final IndexCategory indexCategory = {
             metadata: {label: dataGroup.label},
             items: <IndexNode[]>[]
         };
-        index.connectors.items.push(connectorIndexCategory);
+        if dataGroupType == CLIENTS {
+            index.clients.items.push(indexCategory);
+        } else {
+            index.functions.items.push(indexCategory);
+        }
 
         foreach DataItem dataItemConnection in dataGroup.items {
-            check buildConnectorIndexForDataItem(modulesConfigMap, index, connectorIndexCategory, dataItemConnection);
+            if dataGroupType == CLIENTS {
+                check buildConnectorIndexForDataItem(modulesConfigMap, index, indexCategory, dataItemConnection);
+            } else {
+                check buildFunctionIndexForDataItem(modulesConfigMap, index, indexCategory, dataItemConnection);
+            }
         }
     }
 }
+
+// Build Connector Index. Can be refactor futher.
 
 function buildConnectorIndexForDataItem(ModuleConfigMap modulesConfigMap, Index index, IndexCategory indexCategory, DataItem dataItemConnection) returns error? {
 
@@ -106,22 +110,6 @@ function buildConnectorIndexForDataItem(ModuleConfigMap modulesConfigMap, Index 
     }
 
     // TODO sort the actions based on the popularity and name.
-}
-
-function buiildFunctionIndex(ModuleConfigMap modulesConfigMap, Index index) returns error? {
-
-    foreach DataGroup dataGroup in prebuiltDataSet.functions {
-
-        final IndexCategory functionIndexCategory = {
-            metadata: {label: dataGroup.label},
-            items: <IndexNode[]>[]
-        };
-        index.functions.items.push(functionIndexCategory);
-
-        foreach DataItem dataItemConnection in dataGroup.items {
-            check buildFunctionIndexForDataItem(modulesConfigMap, index, functionIndexCategory, dataItemConnection);
-        }
-    }
 }
 
 function buildFunctionIndexForDataItem(ModuleConfigMap modulesConfigMap, Index index, IndexCategory indexCategory, DataItem dataItemConnection) returns error? {
